@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:kafka="http://www.mulesoft.org/schema/mule/kafka"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/kafka http://www.mulesoft.org/schema/mule/kafka/current/mule-kafka.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="f21cff3c-aae8-42e0-a7fe-74fc55ce5494" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<kafka:producer-config name="Apache_Kafka_Producer_configuration" doc:name="Apache Kafka Producer configuration" doc:id="852899c0-3ea3-4c86-9c9c-a10b0602b31b" >
+		<kafka:producer-plaintext-connection producerAck="ALL">
+			<kafka:bootstrap-servers >
+				<kafka:bootstrap-server value="127.0.0.1:9092" />
+			</kafka:bootstrap-servers>
+		</kafka:producer-plaintext-connection>
+	</kafka:producer-config>
+	<kafka:consumer-config name="Apache_Kafka_Consumer_configuration" doc:name="Apache Kafka Consumer configuration" doc:id="0bd5bd06-8cc5-46de-87c5-d5badd2729b5" >
+		<kafka:consumer-plaintext-connection groupId="kafka-mule-db-group-one" >
+			<kafka:bootstrap-servers >
+				<kafka:bootstrap-server value="127.0.0.1:9092" />
+			</kafka:bootstrap-servers>
+			<kafka:topic-patterns >
+				<kafka:topic-pattern value="sampleAp6" />
+			</kafka:topic-patterns>
+		</kafka:consumer-plaintext-connection>
+	</kafka:consumer-config>
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="c14b3134-0204-46e4-9e29-695eacced3d7" >
+		<db:my-sql-connection host="localhost" port="3306" user="root" password="root" database="airports" />
+	</db:config>
+	<flow name="kafka-mule-db-apiFlow" doc:id="670bb520-3763-4ec2-b215-bebbe47eea53" >
+		<http:listener doc:name="Listener" doc:id="61b17ff7-5253-4de8-98a4-1aef3e44a4cc" config-ref="HTTP_Listener_config" path="/publish" allowedMethods="POST"/>
+		<kafka:publish doc:name="Producer" doc:id="b517622f-dd26-4a6d-b298-f17b387bd90b" topic="#[payload.topicName]" config-ref="Apache_Kafka_Producer_configuration">
+			<kafka:message ><![CDATA[#[payload.topicContent]]]></kafka:message>
+		</kafka:publish>
+		<logger level="INFO" doc:name="Logger" doc:id="17dbcedc-3adb-44d1-9cf6-7f45044fbe2b"/>
+		<ee:transform doc:name="Transform Message" doc:id="a9bd7e0b-6f43-43ed-840b-e5ed2140eb12" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"message" : "published message successfully"
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="0e85d000-9865-4ce6-88ec-ace16627461d" type="ANY">
+				<ee:transform doc:name="Transform Message" doc:id="d20e6501-615d-4048-810c-40ead765d4f8" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"message" : error.description
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+	<flow name="kafka-mule-db-apiFlow1" doc:id="6e3652cb-23d9-4740-9520-5bfa90464ab1" >
+		<kafka:message-listener doc:name="Message listener" doc:id="e677b0d6-886a-4a6a-8415-2a99317eb260" config-ref="Apache_Kafka_Consumer_configuration"/>
+		<logger level="INFO" doc:name="Logger" doc:id="20794ecd-8ff3-4a6b-a039-b64101043b08" message="#[payload]"/>
+		<ee:transform doc:name="Transform Message" doc:id="3fdaa8af-6b38-4820-98a6-70ca930ba006" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+read(payload,"application/json")]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="8bf6d637-cfdf-4d8b-9043-ca05056b359f" message="#[payload]"/>
+		<db:bulk-insert doc:name="Bulk insert" doc:id="6785f865-aaa6-46f2-a1e3-03de600626ab" config-ref="Database_Config">
+			<db:sql ><![CDATA[INSERT INTO airport(code,lat,lon,name,city,state,country,tz,url,runway_length,direct_flights,carriers) VALUES(:code, :lat, :lon, :name, :city, :state, :country, :tz, :url, :runway_length, :direct_flights, :carriers)]]></db:sql>
+		</db:bulk-insert>
+		<logger level="INFO" doc:name="Logger" doc:id="3ea34a74-dc2a-4e12-9a28-53846a69b8ce" message="Inserted Data successfully"/>
+	</flow>
+</mule>
